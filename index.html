@@ -135,6 +135,8 @@ h1,h2,h3{font-family:var(--font-display);}
 .jar-pct input{width:42px;border:none;background:transparent;text-align:right;font-family:var(--font-display);font-weight:600;font-size:14px;color:var(--ink);} .jar-pct input:focus{outline:none;}
 .jar-actions{display:flex;gap:6px;align-items:center;}
 .mini-btn{border:none;border-radius:8px;background:var(--bg);color:var(--ink-soft);font-family:var(--font-body);font-weight:800;font-size:12px;padding:6px 10px;cursor:pointer;}
+.mini-btn.invtog{filter:grayscale(1);opacity:0.5;}
+.mini-btn.invtog.on{filter:none;opacity:1;background:var(--leaf-soft);}
 .jar-del{background:none;border:none;color:var(--ink-faint);font-size:15px;cursor:pointer;padding:0 2px;}
 .takehome-note{font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-top:12px;text-align:center;} .takehome-note b{color:var(--leaf);} .takehome-note.warn b{color:var(--berry);}
 
@@ -292,7 +294,8 @@ h1,h2,h3{font-family:var(--font-display);}
   <div class="card">
     <div class="field"><label>Target daily pay — the steady wage you draw from your buffer</label><div class="amount-wrap"><span class="sym symT">$</span><input type="number" min="0" step="1" id="targetInput" onchange="setTarget(this.value)"></div></div>
     <div class="field"><label>Safety buffer goal (days) — extra beyond this is "ready to invest"</label><input type="number" min="0" step="1" id="bufferInput" onchange="setBufferGoal(this.value)"></div>
-    <div class="note">Runway and "safe to spend today" use your target daily pay. On slow days you still pay yourself this much until the buffer runs dry; good days rebuild it.</div>
+    <div class="field"><label>Starting balance — money you already have to smooth from today</label><div class="amount-wrap"><span class="sym symO">$</span><input type="number" min="0" step="1" id="openInput" onchange="setOpening(this.value)"></div></div>
+    <div class="note">Runway and "safe to spend today" use your target daily pay. On slow days you still pay yourself this much until the buffer runs dry; good days rebuild it. Your starting balance seeds the buffer so the app works from day one — it's counted as spendable take-home, not as income to re-split into jars.</div>
   </div>
   <div class="section-title">Currency</div>
   <div class="card"><div class="field"><label>Exchange rate for combined totals</label><div class="rate-row">1 USD = <input type="number" min="0" step="0.0001" id="fxInput" onchange="setFx(this.value)"> CAD</div></div></div>
@@ -358,6 +361,7 @@ h1,h2,h3{font-family:var(--font-display);}
   <div class="two"><div class="field"><label>Emoji</label><input type="text" id="jarEmoji" maxlength="2" placeholder="🎯"></div><div class="field"><label>% of each net dollar</label><input type="text" inputmode="decimal" id="jarPct" placeholder="10"></div></div>
   <div class="field"><label>Goal amount (optional, in CAD)</label><div class="amount-wrap"><span class="sym">CA$</span><input type="text" inputmode="decimal" id="jarTarget" placeholder="0"></div></div>
   <div class="field"><label>Colour</label><div class="swatches" id="jarSwatches"></div></div>
+  <div class="field"><label style="display:flex;align-items:center;gap:9px;cursor:pointer;color:var(--ink)"><input type="checkbox" id="jarInvest" style="width:auto;flex:0 0 auto"> Count this jar toward “Ready to invest”</label></div>
   <div class="modal-actions"><button class="btn btn-primary" onclick="saveJar()">Add jar</button><button class="btn btn-ghost" onclick="closeModal('jarModal')">Cancel</button></div>
 </div></div>
 
@@ -419,13 +423,13 @@ function mNative(amt,cur){return PFX[cur||'CAD']+fmt(amt);}     // a native amou
 /* state */
 function defaultState(){return{
   version:1,
-  config:{targetDailyPay:150,viewCurrency:'CAD',fxUsdToCad:1.37,bufferDaysGoal:14},
-  jars:[{id:uid(),name:'Taxes',emoji:'🧾',color:'#E1483F',pct:25,target:0},{id:uid(),name:'Rent & bills',emoji:'🏠',color:'#FF7A59',pct:20,target:1500},{id:uid(),name:'Savings & invest',emoji:'📈',color:'#5B8DEF',pct:10,target:0}],
+  config:{targetDailyPay:150,viewCurrency:'CAD',fxUsdToCad:1.37,bufferDaysGoal:14,openingBalance:0},
+  jars:[{id:uid(),name:'Taxes',emoji:'🧾',color:'#E1483F',pct:25,target:0,invest:false},{id:uid(),name:'Rent & bills',emoji:'🏠',color:'#FF7A59',pct:20,target:1500,invest:false},{id:uid(),name:'Savings & invest',emoji:'📈',color:'#5B8DEF',pct:10,target:0,invest:true}],
   budgets:{}, // catId -> CAD monthly limit
   entries:[], // {id,date,kind,amount,currency,category,note,hours?,costs?,jarId?}
 };}
 let state=defaultState();
-function load(){try{const raw=localStorage.getItem(KEY);if(!raw)return;const d=JSON.parse(raw);if(d&&d.config&&Array.isArray(d.jars)&&Array.isArray(d.entries)){state=d;state.budgets=d.budgets||{};if(!state.config.viewCurrency)state.config.viewCurrency='CAD';if(!state.config.fxUsdToCad)state.config.fxUsdToCad=1.37;if(!state.config.bufferDaysGoal)state.config.bufferDaysGoal=14;}}catch(e){}}
+function load(){try{const raw=localStorage.getItem(KEY);if(!raw)return;const d=JSON.parse(raw);if(d&&d.config&&Array.isArray(d.jars)&&Array.isArray(d.entries)){state=d;state.budgets=d.budgets||{};if(!state.config.viewCurrency)state.config.viewCurrency='CAD';if(!state.config.fxUsdToCad)state.config.fxUsdToCad=1.37;if(!state.config.bufferDaysGoal)state.config.bufferDaysGoal=14;if(state.config.openingBalance==null)state.config.openingBalance=0;state.jars.forEach(j=>{if(j.invest===undefined)j.invest=/sav|invest/i.test(j.name||'');});}}catch(e){}}
 function scheduleSave(){if(!stateLoaded)return;clearTimeout(saveTimer);saveTimer=setTimeout(save,400);}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
 function flush(){if(saveTimer){clearTimeout(saveTimer);saveTimer=null;}if(stateLoaded)save();}
@@ -443,10 +447,19 @@ function takeHomePct(){return 100-jarPctSum();}
 function jarPaidCad(j){return expenses().filter(e=>e.jarId===j.id).reduce((s,e)=>s+expCad(e),0);}
 function jarBalCad(j){return netIncomeAllCad()*((j.pct||0)/100)-jarPaidCad(j);}
 function personalSpentCad(){return expenses().filter(e=>!e.jarId).reduce((s,e)=>s+expCad(e),0);}
+function openingBalanceCad(){return Math.max(0,state.config.openingBalance||0);}
 function takeHomeCad(){return netIncomeAllCad()*(takeHomePct()/100);}
-function availableCad(){return takeHomeCad()-personalSpentCad();}
+function availableCad(){return openingBalanceCad()+takeHomeCad()-personalSpentCad();}
 function runway(){const t=state.config.targetDailyPay||0;return t>0?availableCad()/t:0;}
-function safeTodayCad(){return Math.max(0,Math.min(state.config.targetDailyPay||0,availableCad()));}
+function untaggedSpentOnDayCad(iso){return entriesOnDay(iso).filter(e=>e.kind==='expense'&&!e.jarId).reduce((s,e)=>s+expCad(e),0);}
+/* Safe to spend on a given day = the day's steady draw (capped by the buffer),
+   minus what you've already spent from take-home that day, so it counts down. */
+function safeTodayCad(iso){
+  const spentToday=untaggedSpentOnDayCad(iso);
+  const poolBeforeToday=availableCad()+spentToday;               // add today's spend back out
+  const allowance=Math.min(state.config.targetDailyPay||0,poolBeforeToday);
+  return Math.max(0,allowance-spentToday);
+}
 function entriesOnDay(iso){return state.entries.filter(e=>e.date===iso);}
 function netIncomeOnDayCad(iso){return entriesOnDay(iso).filter(e=>e.kind==='income').reduce((s,e)=>s+netCad(e),0);}
 
@@ -473,7 +486,7 @@ function render(){
 function renderOverview(){
   document.getElementById('dayLabel').textContent=labelDay(selDate);
   document.getElementById('jumpToday').style.display=selDate===todayIso()?'none':'inline-block';
-  const safe=safeTodayCad();
+  const safe=safeTodayCad(selDate);
   document.getElementById('safeAmt').textContent=m(safe);
   document.getElementById('safeAmt').style.color=safe>0?'var(--ink)':'var(--berry)';
   const rw=runway();
@@ -527,7 +540,7 @@ function renderBudget(){
   document.getElementById('monthLabel').textContent=labelMonth(selMonth);
   document.getElementById('jumpMonth').style.display=selMonth===todayIso().slice(0,7)?'none':'inline-block';
   const me=monthEntries();
-  const inc=me.filter(e=>e.kind==='income').reduce((s,e)=>s+toCad(e.amount,e.currency),0);
+  const inc=me.filter(e=>e.kind==='income').reduce((s,e)=>s+netCad(e),0);
   const exp=me.filter(e=>e.kind==='expense').reduce((s,e)=>s+expCad(e),0);
   const net=inc-exp;
   const s3=(l,v,c)=>`<div class="s3"><div class="l">${l}</div><div class="v" style="color:${c}">${v}</div></div>`;
@@ -569,17 +582,17 @@ function renderJars(){
   const list=document.getElementById('jarList');
   list.innerHTML=state.jars.map(j=>{
     const bal=jarBalCad(j),hasGoal=j.target>0,pg=hasGoal?Math.min(100,bal/j.target*100):0;
-    return `<div class="jar"><div class="jar-top"><span class="jar-name"><span class="em">${j.emoji}</span>${esc(j.name)}</span><span class="jar-bal" style="color:${bal<0?'var(--berry)':'var(--ink)'}">${m(bal)}</span></div>
+    return `<div class="jar"><div class="jar-top"><span class="jar-name"><span class="em">${j.emoji}</span>${esc(j.name)}</span><span class="jar-bal" style="color:${bal<0?'var(--berry)':'var(--ink)'}">${m(bal)}${hasGoal?`<span style="font-size:12px;color:var(--ink-faint);font-weight:600"> / ${m(j.target)}</span>`:''}</span></div>
       ${hasGoal?`<div class="jar-track"><div class="jar-fill" style="width:${pg}%;background:${j.color}"></div></div>`:''}
       <div class="jar-meta"><span class="jar-pct"><input type="number" min="0" max="100" step="1" value="${j.pct}" onchange="setJarPct('${j.id}',this.value)">% of net</span>
-      <span class="jar-actions">${hasGoal?`<span>${m(bal)} / ${m(j.target)}</span>`:''}<button class="mini-btn" onclick="openPay('${j.id}')">Pay / take out</button><button class="jar-del" onclick="delJar('${j.id}')">×</button></span></div></div>`;
+      <span class="jar-actions"><button class="mini-btn invtog ${j.invest?'on':''}" onclick="toggleInvest('${j.id}')" aria-pressed="${j.invest?'true':'false'}" title="Count this jar toward Ready to invest">📈</button><button class="mini-btn" onclick="openPay('${j.id}')">Pay / take out</button><button class="jar-del" onclick="delJar('${j.id}')" aria-label="Delete jar">×</button></span></div></div>`;
   }).join('')||'<div class="empty">No jars yet.</div>';
   const th=takeHomePct(),n=document.getElementById('takehomeNote');
   n.className='takehome-note'+(th<0?' warn':'');
   n.innerHTML=th<0?`Your jars add up to over 100% (by ${-th}%). Trim one so income reaches take-home.`:`You keep <b>${th}%</b> as take-home after set-asides.`;
   // ready to invest
   const bufferGoalCad=(state.config.targetDailyPay||0)*(state.config.bufferDaysGoal||0);
-  const savings=state.jars.filter(j=>/sav|invest/i.test(j.name)).reduce((s,j)=>s+Math.max(0,jarBalCad(j)),0);
+  const savings=state.jars.filter(j=>j.invest).reduce((s,j)=>s+Math.max(0,jarBalCad(j)),0);
   const beyond=Math.max(0,availableCad()-bufferGoalCad);
   const investable=savings+beyond;
   document.getElementById('investAmt').textContent=m(investable);
@@ -588,6 +601,7 @@ function renderJars(){
     : `Once your buffer passes your ${state.config.bufferDaysGoal}-day goal and your savings jar fills, the surplus that's safe to invest shows up here.`;
 }
 function setJarPct(id,v){const j=state.jars.find(x=>x.id===id);if(j)j.pct=Math.max(0,Math.min(100,num(v)));render();}
+function toggleInvest(id){const j=state.jars.find(x=>x.id===id);if(j)j.invest=!j.invest;render();}
 function delJar(id){const j=state.jars.find(x=>x.id===id);if(j&&confirm(`Delete the “${j.name}” jar? Payments recorded from it will be removed too.`)){state.jars=state.jars.filter(x=>x.id!==id);state.entries=state.entries.filter(e=>e.jarId!==id);render();}}
 
 function renderInsights(){
@@ -609,8 +623,9 @@ function renderInsights(){
 function renderSettings(){
   document.getElementById('targetInput').value=state.config.targetDailyPay||0;
   document.getElementById('bufferInput').value=state.config.bufferDaysGoal||0;
+  document.getElementById('openInput').value=toView(state.config.openingBalance||0).toFixed(2);
   document.getElementById('fxInput').value=state.config.fxUsdToCad||1.37;
-  document.querySelectorAll('.symT').forEach(s=>s.textContent=PFX[view()]);
+  document.querySelectorAll('.symT,.symO').forEach(s=>s.textContent=PFX[view()]);
 }
 
 /* income modal */
@@ -621,7 +636,7 @@ function openIncome(editId){
   incCur=e?e.currency:'CAD';incCat=e?e.category:null;
   document.getElementById('incTitle').textContent=e?'Edit income':'What did you earn?';
   document.getElementById('incSave').textContent=e?'Save changes':'Add income';
-  document.getElementById('incDate').value=e?e.date:selDate;
+  document.getElementById('incDate').max=todayIso();document.getElementById('incDate').value=e?e.date:selDate;
   document.getElementById('incAmt').value=e?String(e.amount):'';
   document.getElementById('incHours').value=e&&e.hours?String(e.hours):'';
   document.getElementById('incCosts').value=e&&e.costs?String(e.costs):'';
@@ -637,7 +652,7 @@ function openIncome(editId){
 function setIncCur(c){incCur=c;document.getElementById('incCad').classList.toggle('on',c==='CAD');document.getElementById('incUsd').classList.toggle('on',c==='USD');document.querySelectorAll('.symI').forEach(s=>s.textContent=PFX[c]);incPreview();}
 function incPreview(){const g=num(document.getElementById('incAmt').value),c=num(document.getElementById('incCosts').value),h=num(document.getElementById('incHours').value),net=g-c;const el=document.getElementById('incPreview');if(g<=0){el.innerHTML='';return;}const keep=net*(takeHomePct()/100);el.innerHTML=`Net <b>${mNative(net,incCur)}</b>${h>0?` · ${mNative(net/h,incCur)}/hr`:''} → keep <b>${mNative(keep,incCur)}</b>, ${mNative(net-keep,incCur)} set aside.`;}
 ['incAmt','incCosts','incHours'].forEach(id=>document.addEventListener('input',e=>{if(e.target&&e.target.id===id)incPreview();}));
-function saveIncome(){const g=num(document.getElementById('incAmt').value);if(g<=0||!incCat)return;const h=num(document.getElementById('incHours').value),c=num(document.getElementById('incCosts').value),note=document.getElementById('incNote').value.trim();const date=document.getElementById('incDate').value||selDate;const data={date,amount:Math.round(g*100)/100,currency:incCur,category:incCat,hours:Math.round(h*100)/100,costs:Math.round(c*100)/100,note};
+function saveIncome(){const g=num(document.getElementById('incAmt').value);if(g<=0||!incCat)return;const h=num(document.getElementById('incHours').value),c=num(document.getElementById('incCosts').value),note=document.getElementById('incNote').value.trim();let date=document.getElementById('incDate').value||selDate;if(date>todayIso())date=todayIso();const data={date,amount:Math.round(g*100)/100,currency:incCur,category:incCat,hours:Math.round(h*100)/100,costs:Math.round(c*100)/100,note};
   if(editIncId){const e=state.entries.find(x=>x.id===editIncId);if(e)Object.assign(e,data);editIncId=null;}
   else state.entries.push(Object.assign({id:uid(),kind:'income'},data));
   selDate=date;closeModal('incomeModal');render();}
@@ -649,7 +664,7 @@ function openExpense(editId){
   expCur=e?e.currency:'CAD';expCat=e?e.category:null;
   document.getElementById('expTitle').textContent=e?'Edit spending':'What did you spend?';
   document.getElementById('expSave').textContent=e?'Save changes':'Add spending';
-  document.getElementById('expDate').value=e?e.date:selDate;
+  document.getElementById('expDate').max=todayIso();document.getElementById('expDate').value=e?e.date:selDate;
   document.getElementById('expAmt').value=e?String(e.amount):'';
   document.getElementById('expNote').value=e&&e.note?e.note:'';
   document.getElementById('expCats').innerHTML=catPickerHtml('expense');
@@ -663,7 +678,7 @@ function openExpense(editId){
   openModal('expenseModal');document.getElementById('expAmt').focus();
 }
 function setExpCur(c){expCur=c;document.getElementById('expCad').classList.toggle('on',c==='CAD');document.getElementById('expUsd').classList.toggle('on',c==='USD');document.querySelectorAll('.symX').forEach(s=>s.textContent=PFX[c]);}
-function saveExpense(){const a=num(document.getElementById('expAmt').value);if(a<=0||!expCat)return;const note=document.getElementById('expNote').value.trim();const jarId=document.getElementById('expJar').value||null;const date=document.getElementById('expDate').value||selDate;const data={date,amount:Math.round(a*100)/100,currency:expCur,category:expCat,note,jarId};
+function saveExpense(){const a=num(document.getElementById('expAmt').value);if(a<=0||!expCat)return;const note=document.getElementById('expNote').value.trim();const jarId=document.getElementById('expJar').value||null;let date=document.getElementById('expDate').value||selDate;if(date>todayIso())date=todayIso();const data={date,amount:Math.round(a*100)/100,currency:expCur,category:expCat,note,jarId};
   if(editExpId){const e=state.entries.find(x=>x.id===editExpId);if(e)Object.assign(e,data);editExpId=null;}
   else state.entries.push(Object.assign({id:uid(),kind:'expense'},data));
   selDate=date;closeModal('expenseModal');render();}
@@ -674,16 +689,17 @@ function openPay(id){payJarId=id;const j=state.jars.find(x=>x.id===id);if(!j)ret
 function savePay(){const a=num(document.getElementById('payAmt').value);if(a<=0||!payJarId)return;const j=state.jars.find(x=>x.id===payJarId);const note=document.getElementById('payNote').value.trim();state.entries.push({id:uid(),date:selDate,kind:'expense',amount:Math.round(a*100)/100,currency:view(),category:(j&&/tax/i.test(j.name))?'taxes':'other_out',note:note||('Paid from '+(j?j.name:'jar')),jarId:payJarId});closeModal('payModal');render();}
 
 /* add jar */
-function openAddJar(){document.getElementById('jarName').value='';document.getElementById('jarEmoji').value='';document.getElementById('jarPct').value='';document.getElementById('jarTarget').value='';jarColor=PALETTE[4];document.getElementById('jarSwatches').innerHTML=PALETTE.map((c,i)=>`<button type="button" class="swatch ${i===4?'on':''}" style="background:${c}" onclick="pickJarColor('${c}',this)"></button>`).join('');openModal('jarModal');}
+function openAddJar(){document.getElementById('jarName').value='';document.getElementById('jarEmoji').value='';document.getElementById('jarPct').value='';document.getElementById('jarTarget').value='';document.getElementById('jarInvest').checked=false;jarColor=PALETTE[4];document.getElementById('jarSwatches').innerHTML=PALETTE.map((c,i)=>`<button type="button" class="swatch ${i===4?'on':''}" style="background:${c}" onclick="pickJarColor('${c}',this)"></button>`).join('');openModal('jarModal');}
 function pickJarColor(c,btn){jarColor=c;document.querySelectorAll('#jarSwatches .swatch').forEach(s=>s.classList.toggle('on',s===btn));}
-function saveJar(){const name=document.getElementById('jarName').value.trim();if(!name)return;const pct=Math.max(0,Math.min(100,num(document.getElementById('jarPct').value)));const target=Math.max(0,num(document.getElementById('jarTarget').value));const emoji=document.getElementById('jarEmoji').value.trim()||'🎯';state.jars.push({id:uid(),name,emoji,color:jarColor,pct,target});closeModal('jarModal');switchTab('jars');}
+function saveJar(){const name=document.getElementById('jarName').value.trim();if(!name)return;const pct=Math.max(0,Math.min(100,num(document.getElementById('jarPct').value)));const target=Math.max(0,num(document.getElementById('jarTarget').value));const emoji=document.getElementById('jarEmoji').value.trim()||'🎯';const invest=document.getElementById('jarInvest').checked;state.jars.push({id:uid(),name,emoji,color:jarColor,pct,target,invest});closeModal('jarModal');switchTab('jars');}
 
 /* settings */
 function setTarget(v){state.config.targetDailyPay=Math.max(0,num(v));render();}
 function setBufferGoal(v){state.config.bufferDaysGoal=Math.max(0,Math.round(num(v)));render();}
+function setOpening(v){state.config.openingBalance=Math.max(0,toCad(num(v),view()));render();}
 function setFx(v){const n=parseFloat(v);if(isFinite(n)&&n>0)state.config.fxUsdToCad=n;render();}
 function exportBackup(){const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='mymoney-backup-'+todayIso()+'.json';a.click();URL.revokeObjectURL(url);}
-function handleBackup(file){if(!file)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(String(r.result));if(d&&d.config&&Array.isArray(d.jars)&&Array.isArray(d.entries)){state=d;state.budgets=d.budgets||{};render();}else alert('That does not look like a My Money backup.');}catch(e){alert('Could not read that file.');}};r.readAsText(file);document.getElementById('importFile').value='';}
+function handleBackup(file){if(!file)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(String(r.result));if(d&&d.config&&Array.isArray(d.jars)&&Array.isArray(d.entries)){state=d;state.budgets=d.budgets||{};if(state.config.openingBalance==null)state.config.openingBalance=0;state.jars.forEach(j=>{if(j.invest===undefined)j.invest=/sav|invest/i.test(j.name||'');});render();}else alert('That does not look like a My Money backup.');}catch(e){alert('Could not read that file.');}};r.readAsText(file);document.getElementById('importFile').value='';}
 function resetAll(){if(confirm('Reset everything? This clears all income, spending, budgets and jars — no undo.')){state=defaultState();render();}}
 
 /* modal utils */
