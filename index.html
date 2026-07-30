@@ -87,6 +87,8 @@ h1,h2,h3{font-family:var(--font-display);}
 .act-row:last-child{border-bottom:none;}
 .act-emoji{font-size:20px;width:24px;text-align:center;flex-shrink:0;}
 .act-info{flex:1;min-width:0;}
+.act-info.edit{cursor:pointer;border-radius:8px;margin:-4px -6px;padding:4px 6px;transition:background .12s;}
+.act-info.edit:active{background:var(--bg);}
 .act-title{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .act-sub{font-size:12px;font-weight:600;color:var(--ink-soft);}
 .act-amt{font-family:var(--font-display);font-weight:600;font-size:16px;flex-shrink:0;}
@@ -310,9 +312,12 @@ h1,h2,h3{font-family:var(--font-display);}
 
 <!-- ===== INCOME MODAL ===== -->
 <div class="modal" id="incomeModal"><div class="sheet">
-  <h3>What did you earn?</h3>
+  <h3 id="incTitle">What did you earn?</h3>
   <div class="field"><div class="amount-wrap"><span class="sym symI">$</span><input type="text" inputmode="decimal" id="incAmt" placeholder="0"></div></div>
-  <div class="field"><label>Currency</label><div class="seg" style="width:100%"><button type="button" class="b on" id="incCad" style="flex:1" onclick="setIncCur('CAD')">CAD</button><button type="button" class="b" id="incUsd" style="flex:1" onclick="setIncCur('USD')">USD</button></div></div>
+  <div class="two">
+    <div class="field"><label>Currency</label><div class="seg" style="width:100%"><button type="button" class="b on" id="incCad" style="flex:1" onclick="setIncCur('CAD')">CAD</button><button type="button" class="b" id="incUsd" style="flex:1" onclick="setIncCur('USD')">USD</button></div></div>
+    <div class="field"><label>Date</label><input type="date" id="incDate"></div>
+  </div>
   <div class="two">
     <div class="field"><label>Hours worked (optional)</label><input type="text" inputmode="decimal" id="incHours" placeholder="0"></div>
     <div class="field"><label>Job costs (optional)</label><input type="text" inputmode="decimal" id="incCosts" placeholder="0"></div>
@@ -320,18 +325,21 @@ h1,h2,h3{font-family:var(--font-display);}
   <div class="field"><label>What kind of income?</label><div class="cat-picker" id="incCats"></div></div>
   <div class="field"><label>Description (optional)</label><input type="text" id="incNote" maxlength="60" placeholder="e.g. Lunch shift, 3 deliveries"></div>
   <div class="hint" id="incPreview"></div>
-  <div class="modal-actions"><button class="btn btn-primary" onclick="saveIncome()">Add income</button><button class="btn btn-ghost" onclick="closeModal('incomeModal')">Cancel</button></div>
+  <div class="modal-actions"><button class="btn btn-primary" id="incSave" onclick="saveIncome()">Add income</button><button class="btn btn-ghost" onclick="closeModal('incomeModal')">Cancel</button></div>
 </div></div>
 
 <!-- ===== EXPENSE MODAL ===== -->
 <div class="modal" id="expenseModal"><div class="sheet">
-  <h3>What did you spend?</h3>
+  <h3 id="expTitle">What did you spend?</h3>
   <div class="field"><div class="amount-wrap"><span class="sym symX">$</span><input type="text" inputmode="decimal" id="expAmt" placeholder="0"></div></div>
-  <div class="field"><label>Currency</label><div class="seg" style="width:100%"><button type="button" class="b on" id="expCad" style="flex:1" onclick="setExpCur('CAD')">CAD</button><button type="button" class="b" id="expUsd" style="flex:1" onclick="setExpCur('USD')">USD</button></div></div>
+  <div class="two">
+    <div class="field"><label>Currency</label><div class="seg" style="width:100%"><button type="button" class="b on" id="expCad" style="flex:1" onclick="setExpCur('CAD')">CAD</button><button type="button" class="b" id="expUsd" style="flex:1" onclick="setExpCur('USD')">USD</button></div></div>
+    <div class="field"><label>Date</label><input type="date" id="expDate"></div>
+  </div>
   <div class="field"><label>Category</label><div class="cat-picker" id="expCats"></div></div>
   <div class="field"><label>Pay from a jar? (optional)</label><select id="expJar"></select></div>
   <div class="field"><label>Description (optional)</label><input type="text" id="expNote" maxlength="60" placeholder="e.g. Weekly shop"></div>
-  <div class="modal-actions"><button class="btn btn-primary" onclick="saveExpense()">Add spending</button><button class="btn btn-ghost" onclick="closeModal('expenseModal')">Cancel</button></div>
+  <div class="modal-actions"><button class="btn btn-primary" id="expSave" onclick="saveExpense()">Add spending</button><button class="btn btn-ghost" onclick="closeModal('expenseModal')">Cancel</button></div>
 </div></div>
 
 <!-- ===== JAR PAY MODAL ===== -->
@@ -358,6 +366,7 @@ const KEY='mymoney-unified-v1';
 let stateLoaded=false, saveTimer=null;
 let tab='overview', selDate=todayIso(), selMonth=todayIso().slice(0,7);
 let incCur='CAD', incCat=null, expCur='CAD', expCat=null, payJarId=null, jarColor='#5B8DEF';
+let editIncId=null, editExpId=null;
 const PALETTE=['#E1483F','#FF7A59','#FFB648','#2FA66B','#5B8DEF','#B47EE5','#14B8A6','#EC4899'];
 const PFX={CAD:'CA$',USD:'US$'};
 const SLICE=['#FF7A59','#2FA66B','#FFB648','#5B8DEF','#B47EE5','#E1483F','#14B8A6','#EC4899'];
@@ -504,11 +513,11 @@ function renderDay(){
     if(e.kind==='income'){
       const net=(e.amount||0)-(e.costs||0),hr=e.hours>0?` · ${mNative(net/e.hours,e.currency)}/hr`:'';
       const sub=`net ${mNative(net,e.currency)}${e.costs>0?` (−${mNative(e.costs,e.currency)} costs)`:''}${hr}`;
-      return `<div class="act-row"><span class="act-emoji">${ci.emoji}</span><div class="act-info"><div class="act-title">${e.note?esc(e.note):esc(ci.label)}</div><div class="act-sub">${sub}</div></div><span class="act-amt" style="color:var(--leaf)">+${mNative(e.amount,e.currency)}</span><button class="act-del" onclick="delEntry('${e.id}')">×</button></div>`;
+      return `<div class="act-row"><span class="act-emoji">${ci.emoji}</span><div class="act-info edit" role="button" tabindex="0" title="Tap to edit" onclick="openIncome('${e.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openIncome('${e.id}')}"><div class="act-title">${e.note?esc(e.note):esc(ci.label)}</div><div class="act-sub">${sub}</div></div><span class="act-amt" style="color:var(--leaf)">+${mNative(e.amount,e.currency)}</span><button class="act-del" onclick="delEntry('${e.id}')" aria-label="Delete entry">×</button></div>`;
     } else {
       const jar=e.jarId?state.jars.find(j=>j.id===e.jarId):null;
       const sub=(jar?`${jar.emoji} paid from ${esc(jar.name)}`:esc(ci.label));
-      return `<div class="act-row"><span class="act-emoji">${jar?jar.emoji:ci.emoji}</span><div class="act-info"><div class="act-title">${e.note?esc(e.note):esc(ci.label)}</div><div class="act-sub">${sub}</div></div><span class="act-amt" style="color:var(--coral)">−${mNative(e.amount,e.currency)}</span><button class="act-del" onclick="delEntry('${e.id}')">×</button></div>`;
+      return `<div class="act-row"><span class="act-emoji">${jar?jar.emoji:ci.emoji}</span><div class="act-info edit" role="button" tabindex="0" title="Tap to edit" onclick="openExpense('${e.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openExpense('${e.id}')}"><div class="act-title">${e.note?esc(e.note):esc(ci.label)}</div><div class="act-sub">${sub}</div></div><span class="act-amt" style="color:var(--coral)">−${mNative(e.amount,e.currency)}</span><button class="act-del" onclick="delEntry('${e.id}')" aria-label="Delete entry">×</button></div>`;
     }
   }).join('');
 }
@@ -606,31 +615,58 @@ function renderSettings(){
 
 /* income modal */
 function catPickerHtml(kind){const gs=kind==='income'?INCOME_GROUPS:EXPENSE_GROUPS;return gs.map(g=>`<div class="cat-group"><div class="cat-group-label">${g.group}</div><div class="cat-chips">${g.items.map(it=>`<button type="button" class="cat-chip" data-id="${it.id}"><span class="ce">${it.emoji}</span>${it.label}</button>`).join('')}</div></div>`).join('');}
-function openIncome(){
-  incCur='CAD';incCat=null;
-  document.getElementById('incAmt').value='';document.getElementById('incHours').value='';document.getElementById('incCosts').value='';document.getElementById('incNote').value='';
+function openIncome(editId){
+  const e=editId?state.entries.find(x=>x.id===editId&&x.kind==='income'):null;
+  editIncId=e?e.id:null;
+  incCur=e?e.currency:'CAD';incCat=e?e.category:null;
+  document.getElementById('incTitle').textContent=e?'Edit income':'What did you earn?';
+  document.getElementById('incSave').textContent=e?'Save changes':'Add income';
+  document.getElementById('incDate').value=e?e.date:selDate;
+  document.getElementById('incAmt').value=e?String(e.amount):'';
+  document.getElementById('incHours').value=e&&e.hours?String(e.hours):'';
+  document.getElementById('incCosts').value=e&&e.costs?String(e.costs):'';
+  document.getElementById('incNote').value=e&&e.note?e.note:'';
   document.getElementById('incCats').innerHTML=catPickerHtml('income');
-  document.querySelectorAll('#incCats .cat-chip').forEach(b=>b.addEventListener('click',()=>{incCat=b.dataset.id;document.querySelectorAll('#incCats .cat-chip').forEach(x=>{x.classList.toggle('sel',x===b);x.classList.toggle('in',x===b);});}));
-  setIncCur('CAD');document.getElementById('incPreview').innerHTML='';
+  document.querySelectorAll('#incCats .cat-chip').forEach(b=>{
+    if(e&&b.dataset.id===e.category)b.classList.add('sel','in');
+    b.addEventListener('click',()=>{incCat=b.dataset.id;document.querySelectorAll('#incCats .cat-chip').forEach(x=>{x.classList.toggle('sel',x===b);x.classList.toggle('in',x===b);});});
+  });
+  setIncCur(incCur);document.getElementById('incPreview').innerHTML='';incPreview();
   openModal('incomeModal');document.getElementById('incAmt').focus();
 }
 function setIncCur(c){incCur=c;document.getElementById('incCad').classList.toggle('on',c==='CAD');document.getElementById('incUsd').classList.toggle('on',c==='USD');document.querySelectorAll('.symI').forEach(s=>s.textContent=PFX[c]);incPreview();}
 function incPreview(){const g=num(document.getElementById('incAmt').value),c=num(document.getElementById('incCosts').value),h=num(document.getElementById('incHours').value),net=g-c;const el=document.getElementById('incPreview');if(g<=0){el.innerHTML='';return;}const keep=net*(takeHomePct()/100);el.innerHTML=`Net <b>${mNative(net,incCur)}</b>${h>0?` · ${mNative(net/h,incCur)}/hr`:''} → keep <b>${mNative(keep,incCur)}</b>, ${mNative(net-keep,incCur)} set aside.`;}
 ['incAmt','incCosts','incHours'].forEach(id=>document.addEventListener('input',e=>{if(e.target&&e.target.id===id)incPreview();}));
-function saveIncome(){const g=num(document.getElementById('incAmt').value);if(g<=0||!incCat)return;const h=num(document.getElementById('incHours').value),c=num(document.getElementById('incCosts').value),note=document.getElementById('incNote').value.trim();state.entries.push({id:uid(),date:selDate,kind:'income',amount:Math.round(g*100)/100,currency:incCur,category:incCat,hours:Math.round(h*100)/100,costs:Math.round(c*100)/100,note});closeModal('incomeModal');render();}
+function saveIncome(){const g=num(document.getElementById('incAmt').value);if(g<=0||!incCat)return;const h=num(document.getElementById('incHours').value),c=num(document.getElementById('incCosts').value),note=document.getElementById('incNote').value.trim();const date=document.getElementById('incDate').value||selDate;const data={date,amount:Math.round(g*100)/100,currency:incCur,category:incCat,hours:Math.round(h*100)/100,costs:Math.round(c*100)/100,note};
+  if(editIncId){const e=state.entries.find(x=>x.id===editIncId);if(e)Object.assign(e,data);editIncId=null;}
+  else state.entries.push(Object.assign({id:uid(),kind:'income'},data));
+  selDate=date;closeModal('incomeModal');render();}
 
 /* expense modal */
-function openExpense(){
-  expCur='CAD';expCat=null;
-  document.getElementById('expAmt').value='';document.getElementById('expNote').value='';
+function openExpense(editId){
+  const e=editId?state.entries.find(x=>x.id===editId&&x.kind==='expense'):null;
+  editExpId=e?e.id:null;
+  expCur=e?e.currency:'CAD';expCat=e?e.category:null;
+  document.getElementById('expTitle').textContent=e?'Edit spending':'What did you spend?';
+  document.getElementById('expSave').textContent=e?'Save changes':'Add spending';
+  document.getElementById('expDate').value=e?e.date:selDate;
+  document.getElementById('expAmt').value=e?String(e.amount):'';
+  document.getElementById('expNote').value=e&&e.note?e.note:'';
   document.getElementById('expCats').innerHTML=catPickerHtml('expense');
-  document.querySelectorAll('#expCats .cat-chip').forEach(b=>b.addEventListener('click',()=>{expCat=b.dataset.id;document.querySelectorAll('#expCats .cat-chip').forEach(x=>{x.classList.toggle('sel',x===b);x.classList.toggle('out',x===b);});}));
+  document.querySelectorAll('#expCats .cat-chip').forEach(b=>{
+    if(e&&b.dataset.id===e.category)b.classList.add('sel','out');
+    b.addEventListener('click',()=>{expCat=b.dataset.id;document.querySelectorAll('#expCats .cat-chip').forEach(x=>{x.classList.toggle('sel',x===b);x.classList.toggle('out',x===b);});});
+  });
   document.getElementById('expJar').innerHTML='<option value="">No — from my take-home</option>'+state.jars.map(j=>`<option value="${j.id}">${j.emoji} ${esc(j.name)} (has ${m(jarBalCad(j))})</option>`).join('');
-  setExpCur('CAD');
+  document.getElementById('expJar').value=e&&e.jarId?e.jarId:'';
+  setExpCur(expCur);
   openModal('expenseModal');document.getElementById('expAmt').focus();
 }
 function setExpCur(c){expCur=c;document.getElementById('expCad').classList.toggle('on',c==='CAD');document.getElementById('expUsd').classList.toggle('on',c==='USD');document.querySelectorAll('.symX').forEach(s=>s.textContent=PFX[c]);}
-function saveExpense(){const a=num(document.getElementById('expAmt').value);if(a<=0||!expCat)return;const note=document.getElementById('expNote').value.trim();const jarId=document.getElementById('expJar').value||null;state.entries.push({id:uid(),date:selDate,kind:'expense',amount:Math.round(a*100)/100,currency:expCur,category:expCat,note,jarId});closeModal('expenseModal');render();}
+function saveExpense(){const a=num(document.getElementById('expAmt').value);if(a<=0||!expCat)return;const note=document.getElementById('expNote').value.trim();const jarId=document.getElementById('expJar').value||null;const date=document.getElementById('expDate').value||selDate;const data={date,amount:Math.round(a*100)/100,currency:expCur,category:expCat,note,jarId};
+  if(editExpId){const e=state.entries.find(x=>x.id===editExpId);if(e)Object.assign(e,data);editExpId=null;}
+  else state.entries.push(Object.assign({id:uid(),kind:'expense'},data));
+  selDate=date;closeModal('expenseModal');render();}
 function delEntry(id){state.entries=state.entries.filter(e=>e.id!==id);render();}
 
 /* jar pay */
